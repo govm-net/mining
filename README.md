@@ -1,0 +1,2 @@
+# mining
+govm mining client
