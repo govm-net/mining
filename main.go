@@ -7,6 +7,9 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/lengzhao/govm/wallet"
 )
@@ -20,7 +23,7 @@ type Config struct {
 	Chains       []uint64 `json:"chains,omitempty"`
 }
 
-const version = "v0.1.0"
+const version = "v0.5.0"
 
 var conf Config
 var wal wallet.TWallet
@@ -82,15 +85,19 @@ func main() {
 	updateBlock()
 	doMining()
 
-	var cmd int
+	var cmd string
 	var descList = []string{
 		"nil",
 		"show HashPower",
 		"show block for mining",
 		"show wallet address",
+		"show private key of wallet",
+		"enter private key of wallet",
+		"quit",
 	}
 	for {
-		switch cmd {
+		ops, _ := strconv.ParseInt(cmd, 10, 32)
+		switch ops {
 		case 1:
 			showHashPower()
 		case 2:
@@ -104,7 +111,36 @@ func main() {
 			}
 			mu.Unlock()
 		case 3:
-			fmt.Printf("wallet:%x\n", wal.Address)
+			fmt.Printf("wallet: %x\n", wal.Address)
+		case 4:
+			fmt.Printf("Private key: %x\n", wal.Key)
+		case 5:
+			var keyStr string
+			fmt.Println("please entry private key:")
+			fmt.Scanln(&keyStr)
+			privKey, err := hex.DecodeString(keyStr)
+			if err != nil || len(privKey) != 32 {
+				fmt.Println("error Private key,", err, len(privKey))
+				break
+			}
+			pubKey := wallet.GetPublicKey(privKey)
+			address := wallet.PublicKeyToAddress(pubKey, wallet.EAddrTypeDefault)
+			fmt.Printf("the wallet address:%x\nentry 'yes' to save wallet.", address)
+			var save string
+			fmt.Scanln(&save)
+			if strings.ToLower(save) == "yes" {
+				fmt.Println("save and resplace wallet")
+				wal.Key = privKey
+				wal.Address = address
+				os.Rename(conf.WalletFile, "old_"+conf.WalletFile)
+				wallet.SaveWallet(conf.WalletFile, conf.Password, wal.Address, wal.Key, nil)
+			} else {
+				fmt.Println("do not save")
+			}
+		case 6:
+			fmt.Println("exiting")
+			time.Sleep(time.Second)
+			os.Exit(0)
 		default:
 			fmt.Println("Please enter the operation number")
 			for i, it := range descList {
@@ -114,7 +150,7 @@ func main() {
 				fmt.Printf("  %d: %s\n", i, it)
 			}
 		}
-		cmd = 0
+		cmd = ""
 		fmt.Scanln(&cmd)
 	}
 }
