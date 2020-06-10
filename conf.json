@@ -1,7 +1,7 @@
 {
     "wallet_file":"wallet.key",
     "password":"govm_pwd@2019",
-    "servers":["127.0.0.1:9090"],
-    "thread_number":1,
+    "servers":["govm.top:9090","govm.net:9090","govm.club:9090"],
+    "thread_number":30,
     "chains":[1]
 }

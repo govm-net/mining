@@ -98,7 +98,6 @@ var mu sync.Mutex
 var hashPowerItem map[int64]uint64
 var genBlockNum uint64
 var blockFlag int
-var startMining bool
 
 func init() {
 	blocks = make(map[uint64]*RespBlock)
@@ -122,6 +121,15 @@ func showHashPower() {
 		fmt.Printf("hashpower:%d, generated blocks:%d\n", hp/count, genBlockNum)
 	} else {
 		fmt.Println("need more time")
+	}
+	for _, c := range conf.Chains {
+		val := getDataFromServer(c, conf.Servers[0], "", "statMining", wal.AddressStr)
+		if len(val) == 0 {
+			continue
+		}
+		var count uint64
+		Decode(val, &count)
+		fmt.Printf("chain:%d, successful mining blocks:%d\n", c, count)
 	}
 }
 
@@ -166,10 +174,6 @@ func requestBlock(chain uint64, server string) {
 		mu.Lock()
 		blocks[block.Chain] = &block
 		blockFlag++
-		// if blockFlag%10 == 1 {
-		// 	fmt.Printf("update block,chain:%d,index:%d,hp_limit:%d\n",
-		// 		block.Chain, block.Index, block.HashpowerLimit)
-		// }
 		mu.Unlock()
 	}
 }
@@ -191,7 +195,6 @@ func postBlock(chain uint64, server string, key, data []byte) {
 }
 
 func updateBlock() {
-	// for _, chain := range conf.Chains {
 	go func(c uint64) {
 		for {
 			for _, server := range conf.Servers {
@@ -202,7 +205,6 @@ func updateBlock() {
 			time.Sleep(time.Second * 20)
 		}
 	}(0)
-	// }
 }
 
 func doMining() {
@@ -237,10 +239,7 @@ func miner(in *RespBlock) {
 	// log.Println("start mining")
 	var count uint64
 	myFlag := blockFlag
-	if !startMining {
-		startMining = true
-		fmt.Println("start mining...")
-	}
+
 	for {
 		now := time.Now().Unix()
 		if now > start+20 || myFlag != blockFlag {
