@@ -23,7 +23,7 @@ type Config struct {
 	Chains       []uint64 `json:"chains,omitempty"`
 }
 
-const version = "v0.5.1"
+const version = "v0.5.2"
 
 var conf Config
 var wal wallet.TWallet
@@ -82,16 +82,14 @@ func main() {
 	addr := hex.EncodeToString(wal.Address)
 	for _, chain := range conf.Chains {
 		var stat bool
-		for _, server := range conf.Servers {
-			if isMiner(chain, server, addr) {
-				stat = true
-				break
-			}
+		if isMiner(chain, conf.Servers[0], addr) {
+			stat = true
+			break
 		}
 		if !stat {
 			fmt.Printf("\nwarning, not miner, chain:%d ....................................\n", chain)
 			fmt.Printf("warning, not miner, chain:%d ....................................\n", chain)
-			fmt.Printf("warning, not miner, chain:%d ....................................\n", chain)
+			fmt.Printf("warning, not miner, chain:%d ....................................\n\n", chain)
 		} else {
 			fmt.Println("enable mining, chain:", chain)
 		}

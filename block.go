@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -93,11 +92,14 @@ type RespBlock struct {
 	From           string
 }
 
+const keepConnServerNum = 2
+
 var blocks map[uint64]*RespBlock
 var mu sync.Mutex
 var hashPowerItem map[int64]uint64
 var genBlockNum uint64
 var blockFlag int
+var servers chan string
 
 func init() {
 	blocks = make(map[uint64]*RespBlock)
@@ -138,7 +140,15 @@ type wsHead struct {
 	Time int64
 }
 
-func requestBlock(chain uint64, server string) {
+func requestBlock(chain uint64) {
+	server := <-servers
+	defer func(s string) {
+		err := recover()
+		if err != nil {
+			log.Println("recover:request block,", err)
+		}
+		servers <- s
+	}(server)
 	origin := fmt.Sprintf("http://%s", server)
 	url := fmt.Sprintf("ws://%s/api/v1/%d/ws/mining", server, chain)
 	ws, err := websocket.Dial(url, "", origin)
@@ -158,16 +168,15 @@ func requestBlock(chain uint64, server string) {
 		log.Println("send msg error:", err)
 		return
 	}
+	fmt.Println("connect to the server:", server)
 
 	for {
+		t := time.Now().Add(time.Minute * 2)
+		ws.SetReadDeadline(t)
 		var block RespBlock
 		err = websocket.JSON.Receive(ws, &block)
 		if err != nil {
-			if err == io.EOF {
-				log.Println("not support multiple clients")
-				break
-			}
-			log.Println("error:", err)
+			// log.Printf("error:%s,try to connect other server", err)
 			break
 		}
 		block.From = server
@@ -195,16 +204,19 @@ func postBlock(chain uint64, server string, key, data []byte) {
 }
 
 func updateBlock() {
-	go func(c uint64) {
-		for {
-			for _, server := range conf.Servers {
-				requestBlock(c, server)
-				time.Sleep(time.Second)
+	servers = make(chan string, len(conf.Servers))
+	for _, server := range conf.Servers {
+		servers <- server
+	}
+	for i := 0; i < keepConnServerNum; i++ {
+		go func() {
+			for {
+				requestBlock(0)
+				time.Sleep(time.Second * 10)
 			}
-			log.Printf("warning: chain:%d fail to get block for mining, try again\n", c)
-			time.Sleep(time.Second * 20)
-		}
-	}(0)
+		}()
+	}
+
 }
 
 func doMining() {
