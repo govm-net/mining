@@ -92,14 +92,12 @@ type RespBlock struct {
 	From           string
 }
 
-const keepConnServerNum = 2
-
 var blocks map[uint64]*RespBlock
 var mu sync.Mutex
 var hashPowerItem map[int64]uint64
 var genBlockNum uint64
 var blockFlag int
-var servers chan string
+var servers []chan string
 
 func init() {
 	blocks = make(map[uint64]*RespBlock)
@@ -112,7 +110,7 @@ func showHashPower() {
 	var hp uint64
 	var count uint64
 	mu.Lock()
-	for i := now - 120; i < now; i++ {
+	for i := now - 120; i <= now; i++ {
 		hp += hashPowerItem[i]
 		if hp > 0 {
 			count++
@@ -120,17 +118,16 @@ func showHashPower() {
 	}
 	mu.Unlock()
 	if count > 0 {
-		fmt.Printf("hashpower:%d, generated blocks:%d\n", hp/count, genBlockNum)
+		fmt.Printf("hashpower:%d, generated candidate blocks:%d\n", hp/count, genBlockNum)
 	} else {
-		fmt.Println("need more time")
+		fmt.Printf("hashpower:0, generated candidate blocks:%d\n", genBlockNum)
 	}
 	for _, c := range conf.Chains {
 		val := getDataFromServer(c, conf.Servers[0], "", "statMining", wal.AddressStr)
-		if len(val) == 0 {
-			continue
-		}
 		var count uint64
-		Decode(val, &count)
+		if len(val) > 0 {
+			Decode(val, &count)
+		}
 		fmt.Printf("chain:%d, successful mining blocks:%d\n", c, count)
 	}
 }
@@ -141,13 +138,13 @@ type wsHead struct {
 }
 
 func requestBlock(chain uint64) {
-	server := <-servers
+	server := <-servers[chain]
 	defer func(s string) {
 		err := recover()
 		if err != nil {
 			log.Println("recover:request block,", err)
 		}
-		servers <- s
+		servers[chain] <- s
 	}(server)
 	origin := fmt.Sprintf("http://%s", server)
 	url := fmt.Sprintf("ws://%s/api/v1/%d/ws/mining", server, chain)
@@ -168,7 +165,7 @@ func requestBlock(chain uint64) {
 		log.Println("send msg error:", err)
 		return
 	}
-	fmt.Println("connect to the server:", server)
+	fmt.Printf("chain:%d,connect to the server:%s\n", chain, server)
 
 	for {
 		t := time.Now().Add(time.Minute * 2)
@@ -176,7 +173,6 @@ func requestBlock(chain uint64) {
 		var block RespBlock
 		err = websocket.JSON.Receive(ws, &block)
 		if err != nil {
-			// log.Printf("error:%s,try to connect other server", err)
 			break
 		}
 		block.From = server
@@ -204,19 +200,24 @@ func postBlock(chain uint64, server string, key, data []byte) {
 }
 
 func updateBlock() {
-	servers = make(chan string, len(conf.Servers))
-	for _, server := range conf.Servers {
-		servers <- server
-	}
-	for i := 0; i < keepConnServerNum; i++ {
-		go func() {
-			for {
-				requestBlock(0)
-				time.Sleep(time.Second * 10)
-			}
-		}()
+	servers = make([]chan string, 100)
+	for i := 0; i < 100; i++ {
+		servers[i] = make(chan string, len(conf.Servers))
+		for _, server := range conf.Servers {
+			servers[i] <- server
+		}
 	}
 
+	for i := 0; i < conf.KeepConnServerNum; i++ {
+		for _, c := range conf.Chains {
+			go func(chain uint64) {
+				for {
+					requestBlock(chain)
+					time.Sleep(time.Second * 10)
+				}
+			}(c)
+		}
+	}
 }
 
 func doMining() {
@@ -271,7 +272,7 @@ func miner(in *RespBlock) {
 		val = append(val, data...)
 		key := wallet.GetHash(val)
 		if getHashPower(key) >= block.HashpowerLimit {
-			log.Printf("mine one block:%x\n", key)
+			log.Printf("mine one candidate block,chain:%d,key:%x\n", block.Chain, key)
 			genBlockNum++
 			postBlock(block.Chain, block.From, key, val)
 		}

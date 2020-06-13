@@ -16,14 +16,15 @@ import (
 
 // Config config
 type Config struct {
-	WalletFile   string   `json:"wallet_file,omitempty"`
-	Password     string   `json:"password,omitempty"`
-	Servers      []string `json:"servers,omitempty"`
-	ThreadNumber int      `json:"thread_number,omitempty"`
-	Chains       []uint64 `json:"chains,omitempty"`
+	WalletFile        string   `json:"wallet_file,omitempty"`
+	Password          string   `json:"password,omitempty"`
+	Servers           []string `json:"servers,omitempty"`
+	ThreadNumber      int      `json:"thread_number,omitempty"`
+	Chains            []uint64 `json:"chains,omitempty"`
+	KeepConnServerNum int      `json:"keep_conn_server_num,omitempty"`
 }
 
-const version = "v0.5.2"
+const version = "v0.5.3"
 
 var conf Config
 var wal wallet.TWallet
@@ -106,6 +107,7 @@ func main() {
 		"show private key of wallet",
 		"enter private key of wallet",
 		"show balance",
+		"is miner",
 		"quit",
 	}
 	for {
@@ -153,14 +155,21 @@ func main() {
 		case 6:
 			for _, c := range conf.Chains {
 				val := getDataFromServer(c, conf.Servers[0], "", "dbCoin", wal.AddressStr)
-				if len(val) == 0 {
-					continue
-				}
 				var coins uint64
-				Decode(val, &coins)
+				if len(val) > 0 {
+					Decode(val, &coins)
+				}
 				fmt.Printf("chain:%d, balance:%.3f govm\n", c, float64(coins)/1000000000)
 			}
 		case 7:
+			for _, c := range conf.Chains {
+				if isMiner(c, conf.Servers[0], addr) {
+					fmt.Printf("chain:%d, is a miner\n", c)
+				} else {
+					fmt.Printf("waring. chain:%d, not a miner\n", c)
+				}
+			}
+		case 8:
 			fmt.Println("exiting")
 			time.Sleep(time.Second)
 			os.Exit(0)

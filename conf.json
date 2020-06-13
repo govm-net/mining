@@ -15,6 +15,7 @@
         "125.124.25.26:9090",
         "106.13.0.172:9090"
     ],
+    "keep_conn_server_num":2,
     "thread_number": 30,
     "chains": [
         1
