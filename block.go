@@ -97,7 +97,6 @@ var mu sync.Mutex
 var hashPowerItem map[int64]uint64
 var genBlockNum uint64
 var blockFlag int
-var servers []chan string
 
 func init() {
 	blocks = make(map[uint64]*RespBlock)
@@ -137,20 +136,23 @@ type wsHead struct {
 	Time int64
 }
 
-func requestBlock(chain uint64) {
-	server := <-servers[chain]
+func requestBlock(chain uint64, servers chan string) {
+	server := <-servers
 	defer func(s string) {
 		err := recover()
 		if err != nil {
 			log.Println("recover:request block,", err)
 		}
-		servers[chain] <- s
+		servers <- s
+		time.Sleep(time.Second * 5)
+		// log.Printf("chain:%d,disconnect, server:%s\n", chain, server)
+		go requestBlock(chain, servers)
 	}(server)
 	origin := fmt.Sprintf("http://%s", server)
 	url := fmt.Sprintf("ws://%s/api/v1/%d/ws/mining", server, chain)
 	ws, err := websocket.Dial(url, "", origin)
 	if err != nil {
-		log.Println("fail to connect server.", url, err)
+		log.Println("fail to connect server.", server, err)
 		return
 	}
 	defer ws.Close()
@@ -165,7 +167,7 @@ func requestBlock(chain uint64) {
 		log.Println("send msg error:", err)
 		return
 	}
-	fmt.Printf("chain:%d,connect to the server:%s\n", chain, server)
+	fmt.Printf("chain:%d,connected to the server:%s\n", chain, server)
 
 	for {
 		t := time.Now().Add(time.Minute * 2)
@@ -200,22 +202,13 @@ func postBlock(chain uint64, server string, key, data []byte) {
 }
 
 func updateBlock() {
-	servers = make([]chan string, 100)
-	for i := 0; i < 100; i++ {
-		servers[i] = make(chan string, len(conf.Servers))
+	for _, c := range conf.Chains {
+		servers := make(chan string, len(conf.Servers))
 		for _, server := range conf.Servers {
-			servers[i] <- server
+			servers <- server
 		}
-	}
-
-	for i := 0; i < conf.KeepConnServerNum; i++ {
-		for _, c := range conf.Chains {
-			go func(chain uint64) {
-				for {
-					requestBlock(chain)
-					time.Sleep(time.Second * 10)
-				}
-			}(c)
+		for i := 0; i < conf.KeepConnServerNum; i++ {
+			go requestBlock(c, servers)
 		}
 	}
 }
